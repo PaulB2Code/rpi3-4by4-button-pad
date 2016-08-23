@@ -3,8 +3,6 @@ package KeyPad
 import (
 	"errors"
 	"fmt"
-	"log"
-	"os"
 	"time"
 
 	"github.com/stianeikeland/go-rpio"
@@ -23,80 +21,35 @@ var keys = [4][4]string{
 var colPin = make([]rpio.Pin, 0, 0)
 var rowPin = make([]rpio.Pin, 0, 0)
 
-var reading = false
+func (kp *Keypad) Close() {
+	// Unmap gpio memory when done
+	rpio.Close()
+}
 
-func main() {
+type Keypad struct {
+	Reading bool
+}
+
+func New() (Keypad, error) {
 	// Open and map memory to access gpio, check for errors
 	if err := rpio.Open(); err != nil {
 		fmt.Println(err)
-		os.Exit(1)
+		return Keypad{}, err
 	}
 
-	// Unmap gpio memory when done
-	defer rpio.Close()
-
 	for i, val := range row {
-		fmt.Println("Row ", i, "  -  ", val)
+		//	fmt.Println("Row ", i, "  -  ", val)
 		rowPin = append(rowPin, rpio.Pin(val))
 		rowPin[i].Output()
 		rowPin[i].High()
 	}
 	for i, val := range column {
-		fmt.Println("Col ", i, "  -  ", val)
+		//	fmt.Println("Col ", i, "  -  ", val)
 		colPin = append(colPin, rpio.Pin(val))
 		colPin[i].Input()
 		colPin[i].PullDown()
 	}
-
-	c := make(chan int)
-	trackClicked(100*time.Millisecond, c)
-	defer stopTracking()
-
-	for {
-		val := <-c
-		reading = false
-
-		letter, err := getValueWithColumn(val)
-		if err != nil {
-			log.Println("[ERROR], ", err)
-		}
-		log.Println("Letter clicked", letter)
-
-	}
-
-	for {
-		time.Sleep(100 * time.Millisecond)
-		//fmt.Println("Col 1  -", col1.Read(), "  Col2 - ", col2.Read(), "Col 3  -", col3.Read(), "  Col4 - ", col4.Read())
-		for i, val := range colPin {
-			if val.Read() == 1 {
-				var rowId int
-				//Test to know whos button is pushed
-				for ii := 0; ii < len(rowPin); ii++ {
-					rowPin[ii].Low()
-					time.Sleep(10 * time.Millisecond)
-					if val.Read() == 0 {
-						rowId = ii
-						goto endblock
-					}
-				}
-				log.Println("Error Reading")
-			endblock:
-
-				letter, err := getLetter(rowId, i)
-				if err != nil {
-					log.Println("[ERROR], ", err)
-				}
-				log.Println("Letter clicked", letter)
-				//Set High All
-				time.Sleep(300 * time.Millisecond)
-				for ii := 0; ii < rowId+1; ii++ {
-					rowPin[ii].High()
-				}
-				goto end
-			}
-		}
-	end:
-	}
+	return Keypad{}, nil
 }
 
 func getLetter(row int, col int) (string, error) {
@@ -110,11 +63,11 @@ func getLetter(row int, col int) (string, error) {
 
 var ticker *time.Ticker
 
-func trackClicked(timeScanning time.Duration, c chan int) {
+func (kp *Keypad) TrackClicked(timeScanning time.Duration, c chan int) {
 	ticker = time.NewTicker(timeScanning)
 	go func() {
 		for _ = range ticker.C {
-			if !reading {
+			if !kp.Reading {
 				for i, val := range colPin {
 					if val.Read() == 1 {
 						c <- i
@@ -127,14 +80,14 @@ func trackClicked(timeScanning time.Duration, c chan int) {
 	}()
 
 }
-func stopTracking() {
+func (kp *Keypad) StopTracking() {
 	ticker.Stop()
 }
-func restartTracking(timeScanning time.Duration) {
+func (kp *Keypad) restartTracking(timeScanning time.Duration) {
 	ticker = time.NewTicker(timeScanning)
 }
 
-func getValueWithColumn(i int) (string, error) {
+func (kp *Keypad) GetValueWithColumn(i int) (string, error) {
 	var rowId int
 	//Test to know whos button is pushed
 	for ii := 0; ii < len(rowPin); ii++ {
